@@ -5,9 +5,9 @@ HANDSIZE = 2
 
 # determines if card1 can be played on card2
 def can_play(card1, card2, chosen_colour):
-    if type(card1) == Wild:
+    if isinstance(card1, Wild):
         return True
-    elif type(card2)==Wild:
+    elif isinstance(card2, Wild):
         return card1.colour == chosen_colour
     elif card1.colour == card2.colour:
         return True
@@ -115,9 +115,8 @@ class Deck:
 # Create player class. 
 # By default a player will play the first card they can
 class Player:
-    def __init__(self, name, idnum):
+    def __init__(self, name):
         self.name = name
-        self.idnum = idnum
         self.hand = []
 
     def show(self):
@@ -152,18 +151,15 @@ class Player:
 
 
 class Game:
-    def __init__(self, num_players):
+    def __init__(self, players):
         self.deck = Deck()
         self.pile = []
-        self.num_players = num_players
-        self.players = []
+        self.num_players = len(players)
+        self.players = players
         self.turn = 0
         self.direction = 1   #direction changes to -1 when reverse is placyed.
         self.chosen_colour = None
         self.winner = None
-        for i in range(num_players):
-            new_player = Player("Player " + str(i), i)
-            self.players.append(new_player)
 
     def deal_cards(self):
         for player in self.players:
@@ -178,31 +174,35 @@ class Game:
 
     def next_turn(self):
         next_player = self.players[self.turn]
-        print("Next player is " + next_player.show())
+        input("Next player is " + next_player.show())
         top_card = self.pile[-1]
+
+        # The player gets to play a card.
         next_card = next_player.play_card(top_card, self.chosen_colour)
         if next_card == None:
             # Player has no cards to play
-            print(next_player.show() + " has no cards to play.")
+            input(next_player.show() + " has no cards to play.")
             next_player.give_card(self.deck.take_card())
             self.turn = (self.turn + self.direction) % self.num_players
             return
 
-        print(next_player.show() + " played " + next_card.show())
+        input(next_player.show() + " played " + next_card.show())
 
 
         # If a wild is played the player needs to choose a colour
-        if type(next_card) == Wild:
+        if isinstance(next_card, Wild):
             self.chosen_colour = next_player.choose_colour()
+            input(next_player.show() + " chooses " + self.chosen_colour + ".")
 
-        # determine who plays the next turn
-        if type(next_card) == Reverse:
+        # Determine who plays the next turn
+        if isinstance(next_card, Reverse):
             self.direction *= -1 
             self.turn = (self.turn + self.direction) % self.num_players
-        elif type(next_card) == Skip:
+        if isinstance(next_card, Skip):
             self.turn = (self.turn + 2*self.direction) % self.num_players
         else:
             self.turn = (self.turn + self.direction) % self.num_players
+
         self.pile.append(next_card)
 
         # See if the player has played their last card
@@ -210,23 +210,68 @@ class Game:
             self.winner = next_player
             return
 
+        # See if next player needs to pick up cards. If they pick up
+        # then their turn is skipped.
+        next_player = self.players[self.turn]
+        if isinstance(next_card, Plus2):
+            input(next_player.show() + " picks up two cards.") 
+            next_player.give_cards(self.deck.take_cards(2)) 
+            self.turn = (self.turn + self.direction) % self.num_players
+        elif isinstance(next_card, WildPlus4):
+            input(next_player.show() + " picks up four cards.") 
+            next_player.give_cards(self.deck.take_cards(4)) 
+            self.turn = (self.turn + self.direction) % self.num_players
+
     def show_top_card(self):
         return (self.pile)[-1].show()
+
+
+class Human(Player):
+    def __init__(self):
+        self.name = input("What is your name? ")
+        self.hand = []
+
+    def play_card(self, top_card, chosen_colour):
+        
+        print(self.name + ": your cards are: ")
+        input(self.show_hand())
+        # Get playable cards
+        playable_cards = []
+        for card in self.hand:
+            if can_play(card, top_card, chosen_colour):
+                playable_cards.append(card)
+
+        if playable_cards == []:
+            # Don't have any cards to play
+            input(self.name + ": You can't play any cards.")
+            return None
+
+        # Choose a card to play
+        print(self.name + ": You can play the following:")
+        for i in range(len(playable_cards)):
+            print(str(i) + ": " + playable_cards[i].show())
+        chosen_card = -1
+        while chosen_card not in range(len(playable_cards)):
+            chosen_card = int(input("Which card do you want to play? "))
+
+        self.hand.remove(playable_cards[chosen_card])
+
+        return playable_cards[chosen_card]
 
 
 # START THE GAME
 
 print("Welcome to uno!")
-num_players = int(input("How many players? "))
-while not (1 < num_players < 11):
-    print("Number of players must be between 2 and 10.")
-    num_players = int(input("How many players? "))
+num_players = 2
+human = Human()
+computer = Player("Computer")
+players = [human, computer]
 
-game = Game(num_players)
+game = Game(players)
 game.deal_cards()
 game.print()
 while(game.winner == None):
     game.next_turn()
-    game.print()
+    #game.print()
 
 print(game.winner.show() + " is the winner!")
