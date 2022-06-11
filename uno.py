@@ -1,4 +1,7 @@
 import random
+import logging, sys
+
+logging.basicConfig(stream=sys.stderr, level=logging.CRITICAL)
 
 HANDSIZE = 2
 
@@ -26,8 +29,6 @@ class ColourCard(Card):
     def __init__(self, colour):
         self.colour = colour
 
-    def colour():
-        return self.colour
 
 class NumberCard(ColourCard):
     def __init__(self, colour, value):
@@ -149,6 +150,12 @@ class Player:
     def has_cards(self):
         return bool(self.hand)
 
+    def playable_cards(self, top_card, chosen_colour):
+        playable_cards = []
+        for card in self.hand:
+            if can_play(card, top_card, chosen_colour):
+                playable_cards.append(card)
+        return playable_cards
 
 class Game:
     def __init__(self, players):
@@ -157,7 +164,7 @@ class Game:
         self.num_players = len(players)
         self.players = players
         self.turn = 0
-        self.direction = 1   #direction changes to -1 when reverse is placyed.
+        self.direction = 1   #direction changes to -1 when reverse is placed.
         self.chosen_colour = None
         self.winner = None
 
@@ -173,26 +180,37 @@ class Game:
             print(player.name + ": " + player.show_hand())
 
     def next_turn(self):
+
+        # If the deck is stating to run out of cards we need to
+        # shuffle the pile and put them back in the deck.
+        # Need at least four cards in the deck to complete a turn.
+        if self.deck.size() < 4:
+            top_card = self.pile.pop(-1)
+            random.shuffle(self.pile)
+            self.deck = self.pile + self.deck
+            self.pile = []
+        else:
+            top_card = self.pile[-1]
+
         next_player = self.players[self.turn]
-        input("Next player is " + next_player.show())
-        top_card = self.pile[-1]
+        logging.info("Next player is " + next_player.show())
 
         # The player gets to play a card.
         next_card = next_player.play_card(top_card, self.chosen_colour)
         if next_card == None:
             # Player has no cards to play
-            input(next_player.show() + " has no cards to play.")
+            logging.info(next_player.show() + " has no cards to play.")
             next_player.give_card(self.deck.take_card())
             self.turn = (self.turn + self.direction) % self.num_players
             return
 
-        input(next_player.show() + " played " + next_card.show())
+        logging.info(next_player.show() + " played " + next_card.show())
 
 
         # If a wild is played the player needs to choose a colour
         if isinstance(next_card, Wild):
             self.chosen_colour = next_player.choose_colour()
-            input(next_player.show() + " chooses " + self.chosen_colour + ".")
+            logging.info(next_player.show() + " chooses " + self.chosen_colour + ".")
 
         # Determine who plays the next turn
         if isinstance(next_card, Reverse):
@@ -214,11 +232,11 @@ class Game:
         # then their turn is skipped.
         next_player = self.players[self.turn]
         if isinstance(next_card, Plus2):
-            input(next_player.show() + " picks up two cards.") 
+            logging.info(next_player.show() + " picks up two cards.") 
             next_player.give_cards(self.deck.take_cards(2)) 
             self.turn = (self.turn + self.direction) % self.num_players
         elif isinstance(next_card, WildPlus4):
-            input(next_player.show() + " picks up four cards.") 
+            logging.info(next_player.show() + " picks up four cards.") 
             next_player.give_cards(self.deck.take_cards(4)) 
             self.turn = (self.turn + self.direction) % self.num_players
 
@@ -235,11 +253,9 @@ class Human(Player):
         
         print(self.name + ": your cards are: ")
         input(self.show_hand())
+
         # Get playable cards
-        playable_cards = []
-        for card in self.hand:
-            if can_play(card, top_card, chosen_colour):
-                playable_cards.append(card)
+        playable_cards = self.playable_cards(top_card, chosen_colour)
 
         if playable_cards == []:
             # Don't have any cards to play
@@ -258,20 +274,74 @@ class Human(Player):
 
         return playable_cards[chosen_card]
 
+    def choose_colour(self):
+        colour = None
+        while (colour not in ["R", "B", "G", "Y"]):
+           colour = input("Choose a colour (R, B, G, Y): ")
+        return colour 
+
+# Define a better computer player.
+# The strategy: play colour that occurs the most frequently.
+class GoodPlayer(Player):
+
+    def play_card(self, top_card, chosen_colour):
+        playable_cards = self.playable_cards(top_card, chosen_colour)
+
+        if playable_cards == []:
+            return None
+
+        # Find colour that occurs most frequently
+        colours = list(filter(lambda card: isinstance(card, ColourCard), playable_cards))
+
+        if len(colours) > 0:
+            colour = max(set(colours), key = colours.count)
+            for card in colours:
+                if card.colour ==  colour:
+                    break
+        else:
+            card = playable_cards[0]
+
+        self.hand.remove(card)
+        return card
+            
+
+    def choose_colour(self):
+        # Choose colour with highest frequency
+        colours = []
+        for card in self.hand:
+            if isinstance(card, ColourCard):
+                colours.append(card.colour)
+
+        if colours == []:
+            return ["R", "Y", "G", "B"][random.randint(0,3)]
+        return max(set(colours), key = colours.count)
+
+
 
 # START THE GAME
 
-print("Welcome to uno!")
-num_players = 2
-human = Human()
-computer = Player("Computer")
-players = [human, computer]
 
-game = Game(players)
-game.deal_cards()
-game.print()
-while(game.winner == None):
-    game.next_turn()
-    #game.print()
+# Play N games and see who wins what
+N = 1000
+tally = [0,0,0,0]
+for i in range(N):
 
-print(game.winner.show() + " is the winner!")
+    # Create 4 players
+    players = [GoodPlayer("GOOD")]
+    for j in range(3):
+        players.append(Player("Random %d" % j))
+
+    game = Game(players)
+    game.deal_cards()
+    while game.winner == None:
+        game.next_turn()
+
+    # game is over
+    winner_index = players.index(game.winner)
+    tally[winner_index] +=1
+        
+print("Played %d games." % N)
+print("Tally: " + str(tally))
+percent = list(map(lambda t : t*100/N, tally))
+print("Percentage: " + str(percent))
+
